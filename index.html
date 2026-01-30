@@ -3,13 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>JIS Dekurz – v1.9.25 (Print Fix)</title>
+    <title>JIS Dekurz – v1.9.26 (Final Fix)</title>
     <style>
         :root{ --bg:#eef2f6; --card:#fff; --border:#d9e0e8; --primary:#2f6fed; --save-green:#107c10; --text:#1a1a1a; }
         body{ font-family: sans-serif; margin:10px; background:var(--bg); color:var(--text); overflow-x: hidden; touch-action: manipulation; }
         
-        /* UI PRVKY */
-        .card{ background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px; margin-bottom:10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .card{ background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px; margin-bottom:10px; }
         
         /* PLOCHA NA PÍSANIE */
         .canvas-outer { 
@@ -18,11 +17,10 @@
             background: #888; 
             border-radius: 4px; 
             width: 100%; 
-            height: 72vh; /* Výška pracovnej plochy */
+            height: 75vh; 
             position: relative;
             box-sizing: border-box;
             -webkit-overflow-scrolling: touch;
-            overscroll-behavior: contain;
         }
         
         .canvas-wrapper { 
@@ -32,96 +30,38 @@
             transform-origin: top left; 
             transition: transform 0.1s ease;
             box-shadow: 0 0 20px rgba(0,0,0,0.5);
-            /* V režime písania blokujeme scroll */
             touch-action: none; 
         }
 
-        /* V režime posúvania povolíme scroll */
-        .canvas-wrapper.scroll-active {
-            touch-action: auto !important;
-            cursor: grab;
-        }
-        .canvas-wrapper.scroll-active #stylusCanvas {
-            pointer-events: none; /* Vypne kreslenie, aby fungoval prst */
-        }
+        .canvas-wrapper.scroll-active { touch-action: auto !important; }
+        .canvas-wrapper.scroll-active #stylusCanvas { pointer-events: none; }
 
-        #stylusCanvas { 
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; 
-            background: transparent; 
-        }
-        
+        #stylusCanvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; background: transparent; }
         #guideImg { width: 100%; display: block; pointer-events: none; }
 
-        /* NÁSTROJE */
-        .toolbar { 
-            display: flex; gap: 5px; flex-wrap: wrap; align-items: center; 
-            padding: 8px; background: #333; color: white; border-radius: 8px; 
-            position: sticky; top: 0; z-index: 100; margin-bottom: 10px;
-        }
-        
+        .toolbar { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; padding: 8px; background: #333; color: white; border-radius: 8px; margin-bottom: 10px; }
         button { padding: 10px 12px; border-radius: 6px; border: none; cursor: pointer; font-weight: bold; font-size: 14px; }
-        
-        .btn-mode { border: 2px solid transparent; width: 48%; padding: 15px; font-size: 16px; opacity: 0.7; }
-        .btn-mode.active { border-color: #fff; opacity: 1; transform: scale(0.98); box-shadow: 0 0 10px rgba(0,0,0,0.3); }
-        
+        .btn-mode { width: 48%; padding: 15px; font-size: 16px; opacity: 0.7; }
+        .btn-mode.active { border-color: #fff; opacity: 1; }
         .btn-tool { background: #555; color: white; }
         .btn-tool.active { background: #fff; color: black; }
 
-        /* TLAČOVÉ ŠTÝLY - FIX PRETEKANIA */
+        /* TLAČ: FIX PRE JEDNU STRANU */
         @media print {
-            @page { 
-                margin: 0; 
-                size: A4 portrait; 
-            }
-            html, body { 
-                margin: 0; 
-                padding: 0; 
-                background: white; 
-                height: 100%; 
-                width: 100%;
-            }
+            @page { margin: 0; size: A4 portrait; }
+            html, body { margin: 0; padding: 0; background: white; height: 100%; overflow: hidden; }
             #ui-container { display: none !important; }
-            
             #printArea { 
                 display: block !important; 
                 position: absolute; 
-                left: 0; 
-                top: 0; 
+                top: 0; left: 0; 
                 width: 210mm; 
-                height: 296mm; /* O 1mm menej ako A4 pre istotu */
-                overflow: hidden; /* Odstrihne všetko, čo by pretekalo */
+                height: 296.5mm; /* Skrátené o pol milimetra proti pretečeniu */
+                overflow: hidden; 
             }
-            .print-page { 
-                position: relative; 
-                width: 100%; 
-                height: 100%; 
-            }
-            .print-bg { 
-                position: absolute; 
-                left: 0; 
-                top: 0; 
-                width: 100%; 
-                height: 100%; 
-                z-index: 1; 
-                object-fit: fill; /* Roztiahne obrázok presne na A4 */
-            }
-            .print-hand { 
-                position: absolute; 
-                left: 0; 
-                top: 0; 
-                width: 100%; 
-                height: 100%; 
-                z-index: 5; 
-            }
-            /* Dátum do tlače */
-            .print-date {
-                position: absolute;
-                top: 15mm; /* Nastav podľa potreby */
-                right: 15mm;
-                z-index: 6;
-                font-size: 14px;
-                font-family: Arial, sans-serif;
-            }
+            .print-page { position: relative; width: 100%; height: 100%; }
+            .print-bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; object-fit: fill; }
+            .print-hand { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 5; }
         }
         #printArea { display: none; }
     </style>
@@ -129,42 +69,25 @@
 <body>
 
 <div id="ui-container">
-    
     <div class="card">
-        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-            <div>
-                <b>1. Podklad:</b>
-                <input type="file" id="bgInput" accept="image/*" onchange="loadBg(this)" style="max-width: 180px;">
-            </div>
-            <div>
-                <b>Dátum:</b>
-                <input type="date" id="dateInput" style="padding:5px; border-radius:5px; border:1px solid #ccc;">
-            </div>
-        </div>
+        <b>Podklad:</b>
+        <input type="file" id="bgInput" accept="image/*" onchange="loadBg(this)">
     </div>
 
     <div style="display:flex; gap:10px; margin-bottom:10px;">
-        <button id="btnScroll" class="btn-mode" style="background:#f39c12; color:black;" onclick="setMode('scroll')">
-            🖐 POSUN
-        </button>
-        <button id="btnDraw" class="btn-mode active" style="background:#2f6fed; color:white;" onclick="setMode('draw')">
-            ✎ PÍSANIE
-        </button>
+        <button id="btnScroll" class="btn-mode" style="background:#f39c12; color:black;" onclick="setMode('scroll')">🖐 POSUN</button>
+        <button id="btnDraw" class="btn-mode active" style="background:#2f6fed; color:white;" onclick="setMode('draw')">✎ PÍSANIE</button>
     </div>
 
     <div class="toolbar">
         <button onclick="undo()" style="background:#555;">↩ Späť</button>
-        <div style="width:1px; height:20px; background:#666; margin:0 5px;"></div>
-        
         <button id="btnBlue" class="btn-tool active" onclick="setColor('#000080', 'btnBlue')">Modrá</button>
         <button id="btnBlack" class="btn-tool" onclick="setColor('#000000', 'btnBlack')">Čierna</button>
         <button id="btnEraser" class="btn-tool" onclick="setEraser('btnEraser')">🧽 Guma</button>
-        
-        <div style="width:1px; height:20px; background:#666; margin:0 5px;"></div>
         <button onclick="toggleZoom()" id="zoomBtn" class="btn-tool">🔍 Lupa</button>
     </div>
 
-    <div class="canvas-outer" id="scrollContainer">
+    <div class="canvas-outer">
         <div class="canvas-wrapper" id="canvasWrapper">
             <img src="" id="guideImg" style="display: none;">
             <canvas id="stylusCanvas"></canvas>
@@ -173,27 +96,12 @@
     
     <div style="display:flex; gap:10px; margin-top:10px;">
         <button onclick="clearAll()" style="background:#d32f2f; color:white; flex:1;">🗑️ Zmazať</button>
-        <button onclick="doPrint()" style="background:var(--save-green); color:white; flex:2; font-size:18px;">🖨️ Tlačiť / PDF</button>
+        <button onclick="doPrint()" style="background:var(--save-green); color:white; flex:2; font-size:18px;">🖨️ Tlačiť</button>
     </div>
-    
-    <div style="text-align:center; margin-top:20px;">
-        <details>
-            <summary style="color:#666; font-size:12px;">🛠️ Posunúť tlač (Kalibrácia)</summary>
-            <div style="padding:10px; background:#eee; border-radius:8px; margin-top:5px;">
-                <button onclick="movePrint(0,-2)">⬆</button>
-                <button onclick="movePrint(0,2)">⬇</button>
-                <button onclick="movePrint(-2,0)">⬅</button>
-                <button onclick="movePrint(2,0)">➡</button>
-                <span id="offsetStat" style="font-size:11px;">0,0</span>
-            </div>
-        </details>
-    </div>
-
 </div>
 
 <div id="printArea">
     <div class="print-page">
-        <div id="printDateBox" class="print-date"></div>
         <img id="pBg" class="print-bg">
         <img id="pHand" class="print-hand">
     </div>
@@ -204,24 +112,14 @@
     const ctx = canvas.getContext('2d');
     const wrapper = document.getElementById('canvasWrapper');
     const guideImg = document.getElementById('guideImg');
-    
-    let drawing = false;
-    let isZoomed = false;
-    let history = []; 
-    let printOffX = 0, printOffY = 0;
+    let drawing = false, isZoomed = false, history = [];
 
-    // Nastavenie dnešného dátumu
-    document.getElementById('dateInput').valueAsDate = new Date();
-
-    // --- REŽIMY ---
     function setMode(mode) {
         document.getElementById('btnScroll').classList.remove('active');
         document.getElementById('btnDraw').classList.remove('active');
-
         if (mode === 'scroll') {
             document.getElementById('btnScroll').classList.add('active');
             wrapper.classList.add('scroll-active');
-            // Hack pre Android: na moment skryť canvas, aby pustil scroll
             canvas.style.visibility = 'hidden';
             setTimeout(() => { canvas.style.visibility = 'visible'; }, 50);
         } else {
@@ -230,7 +128,7 @@
         }
     }
 
-    setMode('draw'); // Štart v režime písania
+    setMode('draw');
 
     function loadBg(input) {
         const file = input.files[0];
@@ -259,21 +157,16 @@
 
     function getPos(e) {
         const rect = canvas.getBoundingClientRect();
-        const scaleX = canvas.width / rect.width;
-        const scaleY = canvas.height / rect.height;
         return {
-            x: (e.clientX - rect.left) * scaleX,
-            y: (e.clientY - rect.top) * scaleY,
+            x: (e.clientX - rect.left) * (canvas.width / rect.width),
+            y: (e.clientY - rect.top) * (canvas.height / rect.height),
             pressure: e.pressure || 0.5
         };
     }
 
-    // --- KRESLENIE ---
     canvas.addEventListener('pointerdown', (e) => {
-        if (wrapper.classList.contains('scroll-active')) return;
-        if (e.pointerType === 'touch') return; // Palm Rejection
-        saveState();
-        drawing = true;
+        if (wrapper.classList.contains('scroll-active') || e.pointerType === 'touch') return;
+        saveState(); drawing = true;
         const pos = getPos(e);
         ctx.beginPath(); ctx.moveTo(pos.x, pos.y);
         e.preventDefault();
@@ -281,66 +174,30 @@
 
     canvas.addEventListener('pointermove', (e) => {
         if (!drawing || e.pointerType === 'touch') return;
-        
         const pos = getPos(e);
-        const w = (ctx.globalCompositeOperation === 'destination-out') ? 25 : (pos.pressure * 2.5 + 0.8); // Tenšia čiara pre A4
-        
-        ctx.lineWidth = w;
-        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-        ctx.lineTo(pos.x, pos.y); ctx.stroke();
+        ctx.lineWidth = (ctx.globalCompositeOperation === 'destination-out') ? 25 : (pos.pressure * 2.5 + 0.8);
+        ctx.lineCap = 'round'; ctx.lineTo(pos.x, pos.y); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(pos.x, pos.y);
         e.preventDefault();
     });
 
-    const stopDraw = () => { drawing = false; ctx.beginPath(); };
-    canvas.addEventListener('pointerup', stopDraw);
-    canvas.addEventListener('pointerleave', stopDraw);
+    window.addEventListener('pointerup', () => { drawing = false; ctx.beginPath(); });
 
-    function saveState() {
-        if (history.length > 15) history.shift();
-        history.push(canvas.toDataURL());
-    }
+    function saveState() { if (history.length > 15) history.shift(); history.push(canvas.toDataURL()); }
     function undo() {
         if (history.length === 0) return;
         let img = new Image();
         img.onload = () => { ctx.clearRect(0,0,canvas.width,canvas.height); ctx.drawImage(img,0,0); };
         img.src = history.pop();
     }
-    function setColor(c, id) {
-        ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = c;
-        updateUI(id);
-    }
-    function setEraser(id) {
-        ctx.globalCompositeOperation = 'destination-out';
-        updateUI(id);
-    }
-    function updateUI(id) {
-        document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
-        if(id) document.getElementById(id).classList.add('active');
-    }
-    function clearAll() { if(confirm("Naozaj vymazať všetko?")) { saveState(); ctx.clearRect(0,0,canvas.width,canvas.height); } }
-
-    function movePrint(x, y) {
-        printOffX += x; printOffY += y;
-        document.getElementById('offsetStat').innerText = `${printOffX},${printOffY}`;
-    }
+    function setColor(c, id) { ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = c; updateUI(id); }
+    function setEraser(id) { ctx.globalCompositeOperation = 'destination-out'; updateUI(id); }
+    function updateUI(id) { document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active')); document.getElementById(id).classList.add('active'); }
+    function clearAll() { if(confirm("Zmazať všetko?")) { saveState(); ctx.clearRect(0,0,canvas.width,canvas.height); } }
 
     function doPrint() {
-        if(!guideImg.src) return alert("Najprv vyber podklad!");
-        
-        const pBg = document.getElementById('pBg');
-        pBg.src = guideImg.src;
-        pBg.style.left = printOffX + "px";
-        pBg.style.top = printOffY + "px";
-        
+        document.getElementById('pBg').src = guideImg.src;
         document.getElementById('pHand').src = canvas.toDataURL();
-        
-        // Vloženie dátumu do tlače
-        const d = document.getElementById('dateInput').valueAsDate;
-        if(d) {
-            document.getElementById('printDateBox').innerText = d.toLocaleDateString('sk-SK');
-        }
-
         setTimeout(() => window.print(), 500);
     }
 </script>
