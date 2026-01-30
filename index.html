@@ -1,49 +1,240 @@
-// --- AUTO-DETEKCIA (PERO vs PRST) ---
-const canvas = document.getElementById('stylusCanvas');
-const ctx = canvas.getContext('2d');
-let drawing = false;
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>JIS Dekurz Master – v1.9.26</title>
+    <style>
+        :root{ --bg:#eef2f6; --card:#fff; --border:#d9e0e8; --primary:#2f6fed; --save-green:#107c10; --text:#1a1a1a; }
+        body{ font-family: sans-serif; margin:10px; background:var(--bg); color:var(--text); }
+        
+        .card{ background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px; margin-bottom:10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        
+        /* OBLASŤ PRE PAPIER */
+        .canvas-outer { 
+            overflow: auto; 
+            border: 2px solid #999; 
+            background: #777; 
+            border-radius: 8px; 
+            width: 100%; 
+            height: 75vh; 
+            position: relative;
+            /* Povolíme prirodzený scroll prstami */
+            touch-action: auto !important; 
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        .canvas-wrapper { 
+            position: relative; 
+            background: white; 
+            margin: 0 auto; 
+            transform-origin: top left; 
+            transition: transform 0.1s ease;
+            /* Wrapper dovoľuje systému scrollovať */
+            touch-action: auto !important; 
+        }
 
-// KĽÚČOVÉ NASTAVENIE: Canvas nebude blokovať prsty
-canvas.style.touchAction = 'auto'; 
+        #stylusCanvas { 
+            position: absolute; 
+            top: 0; left: 0; 
+            width: 100%; height: 100%; 
+            z-index: 10; 
+            background: transparent;
+            /* Kľúčové: Canvas neblokuje gestá prstov */
+            touch-action: auto !important; 
+        }
+        
+        #guideImg { width: 100%; display: block; pointer-events: none; }
 
-function getPos(e) {
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    return {
-        x: (e.clientX - rect.left) * scaleX,
-        y: (e.clientY - rect.top) * scaleY,
-        pressure: e.pressure || 0.5
-    };
-}
+        .toolbar { 
+            display: flex; gap: 8px; flex-wrap: wrap; align-items: center; 
+            padding: 10px; background: #333; color: white; border-radius: 8px; 
+            position: sticky; top: 0; z-index: 100; margin-bottom: 10px;
+        }
+        
+        button { padding: 10px 14px; border-radius: 8px; border: none; cursor: pointer; font-weight: bold; }
+        .btn-tool { background: #555; color: white; border: 1px solid #777; }
+        .btn-tool.active { background: #fff; color: black; border-color: white; }
+        
+        @media print {
+            @page { margin: 0; size: A4 portrait; }
+            body { margin: 0; padding: 0; background: white; }
+            #ui-container { display: none !important; }
+            #printArea { display: block !important; position: absolute; left: 0; top: 0; width: 210mm; height: 297mm; overflow: hidden; }
+            .print-page { position: relative; width: 100%; height: 100%; }
+            .print-bg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 1; object-fit: contain; }
+            .print-hand { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 5; }
+        }
+        #printArea { display: none; }
+    </style>
+</head>
+<body>
 
-canvas.addEventListener('pointerdown', (e) => {
-    // AK JE TO PERO (pen) - KRESLÍME
-    if (e.pointerType === 'pen') {
-        drawing = true;
+<div id="ui-container">
+    <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <b>📁 Podklad:</b>
+            <input type="file" id="bgInput" accept="image/*" onchange="loadBg(this)" style="max-width: 200px;">
+        </div>
+    </div>
+
+    <div class="toolbar">
+        <button onclick="undo()" style="background:#f39c12; color:black;">↩ Späť</button>
+        <button id="btnBlue" class="btn-tool active" onclick="setColor('#000080', 'btnBlue')">Modrá</button>
+        <button id="btnBlack" class="btn-tool" onclick="setColor('#000000', 'btnBlack')">Čierna</button>
+        <button id="btnEraser" class="btn-tool" onclick="setEraser('btnEraser')">🧽 Guma</button>
+        <button onclick="toggleZoom()" id="zoomBtn" class="btn-tool">🔍 Lupa</button>
+        <button onclick="toggleFullscreen()" style="background:#222; margin-left:auto;">⛶ Celá obrazovka</button>
+    </div>
+
+    <div class="canvas-outer">
+        <div class="canvas-wrapper" id="canvasWrapper">
+            <img src="" id="guideImg" style="display: none;">
+            <canvas id="stylusCanvas"></canvas>
+        </div>
+    </div>
+    
+    <div style="display:flex; gap:10px; margin-top:10px;">
+        <button onclick="clearAll()" style="background:#d32f2f; color:white; flex:1;">🗑️ Zmazať všetko</button>
+        <button onclick="doPrint()" style="background:var(--save-green); color:white; flex:2; font-size:18px;">🖨️ Tlačiť</button>
+    </div>
+</div>
+
+<div id="printArea">
+    <div class="print-page">
+        <img id="pBg" class="print-bg">
+        <img id="pHand" class="print-hand">
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('stylusCanvas');
+    const ctx = canvas.getContext('2d');
+    const wrapper = document.getElementById('canvasWrapper');
+    const guideImg = document.getElementById('guideImg');
+    
+    let drawing = false;
+    let isZoomed = false;
+    let history = []; 
+
+    function loadBg(input) {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            guideImg.src = e.target.result;
+            guideImg.style.display = "block";
+            guideImg.onload = () => {
+                canvas.width = guideImg.naturalWidth;
+                canvas.height = guideImg.naturalHeight;
+                wrapper.style.width = guideImg.naturalWidth + "px";
+                wrapper.style.height = guideImg.naturalHeight + "px";
+                saveState();
+            };
+        };
+        reader.readAsDataURL(file);
+    }
+
+    // --- ANDROID NATIVE LOGIKA (PERO vs PRST) ---
+    function getPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        return {
+            x: (e.clientX - rect.left) * scaleX,
+            y: (e.clientY - rect.top) * scaleY,
+            pressure: e.pressure || 0.5
+        };
+    }
+
+    canvas.addEventListener('pointerdown', (e) => {
+        // Ak je to pero (pen), začneme kresliť
+        if (e.pointerType === 'pen') {
+            saveState();
+            drawing = true;
+            const pos = getPos(e);
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+            // Zastavíme zachytávanie, aby pero nekolidovalo so scrollom
+            canvas.releasePointerCapture(e.pointerId);
+        }
+        // Ak je to prst (touch), neurobíme nič -> prehliadač sám začne scrollovať
+    });
+
+    canvas.addEventListener('pointermove', (e) => {
+        if (!drawing || e.pointerType !== 'pen') return;
+        
         const pos = getPos(e);
+        // Fixná tenká linka pre medicínsky zápis
+        ctx.lineWidth = (pos.pressure * 2.5) + 0.8;
+        if(ctx.globalCompositeOperation === 'destination-out') ctx.lineWidth = 25;
+
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.lineTo(pos.x, pos.y);
+        ctx.stroke();
         ctx.beginPath();
         ctx.moveTo(pos.x, pos.y);
-        // Zastavíme scroll LEN pre pero, aby sa papier pod hrotom nehýbal
-        canvas.releasePointerCapture(e.pointerId); 
+    });
+
+    window.addEventListener('pointerup', (e) => {
+        drawing = false;
+    });
+
+    // --- FUNKCIE ---
+    function toggleZoom() {
+        isZoomed = !isZoomed;
+        wrapper.style.transform = isZoomed ? 'scale(1.5)' : 'scale(1)';
+        document.getElementById('zoomBtn').innerText = isZoomed ? "🔍 1.5x" : "🔍 Lupa";
+        document.getElementById('zoomBtn').classList.toggle('active');
     }
-    // AK JE TO PRST (touch) - NEROBÍME NIČ (prehliadač sám začne scrollovať)
-});
 
-canvas.addEventListener('pointermove', (e) => {
-    if (!drawing || e.pointerType !== 'pen') return;
+    function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen();
+        } else {
+            document.exitFullscreen();
+        }
+    }
 
-    const pos = getPos(e);
-    ctx.lineWidth = (pos.pressure * 3) + 1;
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = '#000080';
-    
-    ctx.lineTo(pos.x, pos.y);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(pos.x, pos.y);
-});
+    function saveState() {
+        if (history.length > 15) history.shift();
+        history.push(canvas.toDataURL());
+    }
 
-window.addEventListener('pointerup', (e) => {
-    drawing = false;
-});
+    function undo() {
+        if (history.length === 0) return;
+        let img = new Image();
+        img.onload = () => { ctx.clearRect(0,0,canvas.width,canvas.height); ctx.drawImage(img,0,0); };
+        img.src = history.pop();
+    }
+
+    function setColor(c, id) {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.strokeStyle = c;
+        updateUI(id);
+    }
+
+    function setEraser(id) {
+        ctx.globalCompositeOperation = 'destination-out';
+        updateUI(id);
+    }
+
+    function updateUI(id) {
+        document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+    }
+
+    function clearAll() {
+        if(confirm("Naozaj vymazať všetko?")) { saveState(); ctx.clearRect(0,0,canvas.width,canvas.height); }
+    }
+
+    function doPrint() {
+        if(!guideImg.src) return alert("Chýba podklad!");
+        document.getElementById('pBg').src = guideImg.src;
+        document.getElementById('pHand').src = canvas.toDataURL();
+        setTimeout(() => window.print(), 500);
+    }
+</script>
+</body>
+</html>
