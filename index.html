@@ -3,62 +3,165 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>JIS Dekurz – v1.9.28</title>
+    <title>JIS Dekurz – v1.9.25 (Print Fix)</title>
     <style>
         :root{ --bg:#eef2f6; --card:#fff; --border:#d9e0e8; --primary:#2f6fed; --save-green:#107c10; --text:#1a1a1a; }
-        body{ font-family: sans-serif; margin:5px; background:var(--bg); color:var(--text); overflow: hidden; }
+        body{ font-family: sans-serif; margin:10px; background:var(--bg); color:var(--text); overflow-x: hidden; touch-action: manipulation; }
         
-        /* OKNO, KDE VIDÍŠ CELÚ A4 */
+        /* UI PRVKY */
+        .card{ background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px; margin-bottom:10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        
+        /* PLOCHA NA PÍSANIE */
         .canvas-outer { 
-            overflow: auto; 
-            border: 2px solid #999; 
-            background: #555; 
-            border-radius: 8px; 
+            overflow: auto !important; 
+            border: 2px solid #666; 
+            background: #888; 
+            border-radius: 4px; 
             width: 100%; 
-            height: 82vh; /* Maximálne využitie výšky displeja */
+            height: 72vh; /* Výška pracovnej plochy */
             position: relative;
-            touch-action: pan-x pan-y;
+            box-sizing: border-box;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
         }
         
         .canvas-wrapper { 
             position: relative; 
             background: white; 
             margin: 0 auto; 
-            transform-origin: 0 0; /* Dôležité pre správne priblíženie na bod */
-            transition: transform 0.3s ease-out;
+            transform-origin: top left; 
+            transition: transform 0.1s ease;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            /* V režime písania blokujeme scroll */
+            touch-action: none; 
+        }
+
+        /* V režime posúvania povolíme scroll */
+        .canvas-wrapper.scroll-active {
+            touch-action: auto !important;
+            cursor: grab;
+        }
+        .canvas-wrapper.scroll-active #stylusCanvas {
+            pointer-events: none; /* Vypne kreslenie, aby fungoval prst */
         }
 
         #stylusCanvas { 
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; 
-            background: transparent; touch-action: none; 
+            background: transparent; 
         }
         
         #guideImg { width: 100%; display: block; pointer-events: none; }
 
+        /* NÁSTROJE */
         .toolbar { 
-            display: flex; gap: 5px; padding: 8px; background: #333; color: white; border-radius: 8px; 
-            margin-bottom: 5px; align-items: center;
+            display: flex; gap: 5px; flex-wrap: wrap; align-items: center; 
+            padding: 8px; background: #333; color: white; border-radius: 8px; 
+            position: sticky; top: 0; z-index: 100; margin-bottom: 10px;
         }
         
-        button { padding: 10px; border-radius: 6px; border: none; cursor: pointer; font-weight: bold; font-size: 13px; }
+        button { padding: 10px 12px; border-radius: 6px; border: none; cursor: pointer; font-weight: bold; font-size: 14px; }
+        
+        .btn-mode { border: 2px solid transparent; width: 48%; padding: 15px; font-size: 16px; opacity: 0.7; }
+        .btn-mode.active { border-color: #fff; opacity: 1; transform: scale(0.98); box-shadow: 0 0 10px rgba(0,0,0,0.3); }
+        
         .btn-tool { background: #555; color: white; }
         .btn-tool.active { background: #fff; color: black; }
-        
-        #status-msg { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); color: white; padding: 5px 15px; border-radius: 20px; font-size: 12px; display: none; z-index: 100; }
+
+        /* TLAČOVÉ ŠTÝLY - FIX PRETEKANIA */
+        @media print {
+            @page { 
+                margin: 0; 
+                size: A4 portrait; 
+            }
+            html, body { 
+                margin: 0; 
+                padding: 0; 
+                background: white; 
+                height: 100%; 
+                width: 100%;
+            }
+            #ui-container { display: none !important; }
+            
+            #printArea { 
+                display: block !important; 
+                position: absolute; 
+                left: 0; 
+                top: 0; 
+                width: 210mm; 
+                height: 296mm; /* O 1mm menej ako A4 pre istotu */
+                overflow: hidden; /* Odstrihne všetko, čo by pretekalo */
+            }
+            .print-page { 
+                position: relative; 
+                width: 100%; 
+                height: 100%; 
+            }
+            .print-bg { 
+                position: absolute; 
+                left: 0; 
+                top: 0; 
+                width: 100%; 
+                height: 100%; 
+                z-index: 1; 
+                object-fit: fill; /* Roztiahne obrázok presne na A4 */
+            }
+            .print-hand { 
+                position: absolute; 
+                left: 0; 
+                top: 0; 
+                width: 100%; 
+                height: 100%; 
+                z-index: 5; 
+            }
+            /* Dátum do tlače */
+            .print-date {
+                position: absolute;
+                top: 15mm; /* Nastav podľa potreby */
+                right: 15mm;
+                z-index: 6;
+                font-size: 14px;
+                font-family: Arial, sans-serif;
+            }
+        }
+        #printArea { display: none; }
     </style>
 </head>
 <body>
 
-<div id="status-msg">Drž pero pre priblíženie...</div>
-
 <div id="ui-container">
+    
+    <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+            <div>
+                <b>1. Podklad:</b>
+                <input type="file" id="bgInput" accept="image/*" onchange="loadBg(this)" style="max-width: 180px;">
+            </div>
+            <div>
+                <b>Dátum:</b>
+                <input type="date" id="dateInput" style="padding:5px; border-radius:5px; border:1px solid #ccc;">
+            </div>
+        </div>
+    </div>
+
+    <div style="display:flex; gap:10px; margin-bottom:10px;">
+        <button id="btnScroll" class="btn-mode" style="background:#f39c12; color:black;" onclick="setMode('scroll')">
+            🖐 POSUN
+        </button>
+        <button id="btnDraw" class="btn-mode active" style="background:#2f6fed; color:white;" onclick="setMode('draw')">
+            ✎ PÍSANIE
+        </button>
+    </div>
+
     <div class="toolbar">
-        <input type="file" id="bgInput" accept="image/*" onchange="loadBg(this)" style="width: 120px;">
-        <button onclick="undo()" style="background:#f39c12;">↩ Späť</button>
+        <button onclick="undo()" style="background:#555;">↩ Späť</button>
+        <div style="width:1px; height:20px; background:#666; margin:0 5px;"></div>
+        
         <button id="btnBlue" class="btn-tool active" onclick="setColor('#000080', 'btnBlue')">Modrá</button>
+        <button id="btnBlack" class="btn-tool" onclick="setColor('#000000', 'btnBlack')">Čierna</button>
         <button id="btnEraser" class="btn-tool" onclick="setEraser('btnEraser')">🧽 Guma</button>
-        <button onclick="resetZoom()" id="zoomBtn" class="btn-tool">🔍 Celá A4</button>
-        <button onclick="doPrint()" style="background:var(--save-green); margin-left:auto;">🖨️ Tlačiť</button>
+        
+        <div style="width:1px; height:20px; background:#666; margin:0 5px;"></div>
+        <button onclick="toggleZoom()" id="zoomBtn" class="btn-tool">🔍 Lupa</button>
     </div>
 
     <div class="canvas-outer" id="scrollContainer">
@@ -67,12 +170,32 @@
             <canvas id="stylusCanvas"></canvas>
         </div>
     </div>
+    
+    <div style="display:flex; gap:10px; margin-top:10px;">
+        <button onclick="clearAll()" style="background:#d32f2f; color:white; flex:1;">🗑️ Zmazať</button>
+        <button onclick="doPrint()" style="background:var(--save-green); color:white; flex:2; font-size:18px;">🖨️ Tlačiť / PDF</button>
+    </div>
+    
+    <div style="text-align:center; margin-top:20px;">
+        <details>
+            <summary style="color:#666; font-size:12px;">🛠️ Posunúť tlač (Kalibrácia)</summary>
+            <div style="padding:10px; background:#eee; border-radius:8px; margin-top:5px;">
+                <button onclick="movePrint(0,-2)">⬆</button>
+                <button onclick="movePrint(0,2)">⬇</button>
+                <button onclick="movePrint(-2,0)">⬅</button>
+                <button onclick="movePrint(2,0)">➡</button>
+                <span id="offsetStat" style="font-size:11px;">0,0</span>
+            </div>
+        </details>
+    </div>
+
 </div>
 
 <div id="printArea">
-    <div class="print-page" style="position:relative; width:210mm; height:297mm;">
-        <img id="pBg" style="width:100%; height:100%;">
-        <img id="pHand" style="position:absolute; top:0; left:0; width:100%; height:100%;">
+    <div class="print-page">
+        <div id="printDateBox" class="print-date"></div>
+        <img id="pBg" class="print-bg">
+        <img id="pHand" class="print-hand">
     </div>
 </div>
 
@@ -80,14 +203,34 @@
     const canvas = document.getElementById('stylusCanvas');
     const ctx = canvas.getContext('2d');
     const wrapper = document.getElementById('canvasWrapper');
-    const container = document.getElementById('scrollContainer');
     const guideImg = document.getElementById('guideImg');
-    const statusMsg = document.getElementById('status-msg');
     
     let drawing = false;
+    let isZoomed = false;
     let history = []; 
-    let zoomTimer;
-    let initialScale = 1;
+    let printOffX = 0, printOffY = 0;
+
+    // Nastavenie dnešného dátumu
+    document.getElementById('dateInput').valueAsDate = new Date();
+
+    // --- REŽIMY ---
+    function setMode(mode) {
+        document.getElementById('btnScroll').classList.remove('active');
+        document.getElementById('btnDraw').classList.remove('active');
+
+        if (mode === 'scroll') {
+            document.getElementById('btnScroll').classList.add('active');
+            wrapper.classList.add('scroll-active');
+            // Hack pre Android: na moment skryť canvas, aby pustil scroll
+            canvas.style.visibility = 'hidden';
+            setTimeout(() => { canvas.style.visibility = 'visible'; }, 50);
+        } else {
+            document.getElementById('btnDraw').classList.add('active');
+            wrapper.classList.remove('scroll-active');
+        }
+    }
+
+    setMode('draw'); // Štart v režime písania
 
     function loadBg(input) {
         const file = input.files[0];
@@ -101,98 +244,67 @@
                 canvas.height = guideImg.naturalHeight;
                 wrapper.style.width = guideImg.naturalWidth + "px";
                 wrapper.style.height = guideImg.naturalHeight + "px";
-                
-                // AUTOMATICKÝ FIT: Výpočet aby sa A4 zmestila na šírku
-                initialScale = container.clientWidth / canvas.width;
-                wrapper.style.transform = `scale(${initialScale})`;
                 saveState();
             };
         };
         reader.readAsDataURL(file);
     }
 
+    function toggleZoom() {
+        isZoomed = !isZoomed;
+        wrapper.style.transform = isZoomed ? 'scale(1.5)' : 'scale(1)';
+        document.getElementById('zoomBtn').classList.toggle('active');
+        if(isZoomed) setMode('scroll');
+    }
+
     function getPos(e) {
         const rect = canvas.getBoundingClientRect();
-        // Prepočet súradníc podľa aktuálnej mierky transformácie
-        const currentScale = rect.width / canvas.width;
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
         return {
-            x: (e.clientX - rect.left) / currentScale,
-            y: (e.clientY - rect.top) / currentScale,
+            x: (e.clientX - rect.left) * scaleX,
+            y: (e.clientY - rect.top) * scaleY,
             pressure: e.pressure || 0.5
         };
     }
 
-    // --- LOGIKA DLHÉHO PODRŽANIA (3 SEKUNDY) ---
+    // --- KRESLENIE ---
     canvas.addEventListener('pointerdown', (e) => {
-        if (e.pointerType === 'pen') {
-            e.preventDefault();
-            
-            // Štart časovača pre Lupu (3s)
-            statusMsg.style.display = 'block';
-            zoomTimer = setTimeout(() => {
-                smartZoom(e);
-            }, 3000);
-
-            drawing = true;
-            const pos = getPos(e);
-            ctx.beginPath();
-            ctx.moveTo(pos.x, pos.y);
-        }
+        if (wrapper.classList.contains('scroll-active')) return;
+        if (e.pointerType === 'touch') return; // Palm Rejection
+        saveState();
+        drawing = true;
+        const pos = getPos(e);
+        ctx.beginPath(); ctx.moveTo(pos.x, pos.y);
+        e.preventDefault();
     });
 
     canvas.addEventListener('pointermove', (e) => {
-        if (drawing && e.pointerType === 'pen') {
-            // Ak sa pero hýbe, zrušíme časovač lupy (nechceme lupu počas písania)
-            clearTimeout(zoomTimer);
-            statusMsg.style.display = 'none';
-
-            const pos = getPos(e);
-            ctx.lineWidth = (pos.pressure * 2.5) + 0.8;
-            if(ctx.globalCompositeOperation === 'destination-out') ctx.lineWidth = 30;
-            ctx.lineCap = 'round';
-            ctx.lineTo(pos.x, pos.y);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(pos.x, pos.y);
-        }
-    });
-
-    window.addEventListener('pointerup', () => {
-        clearTimeout(zoomTimer);
-        statusMsg.style.display = 'none';
-        drawing = false;
-        if(history[history.length-1] !== canvas.toDataURL()) saveState();
-    });
-
-    function smartZoom(e) {
-        statusMsg.style.display = 'none';
-        // Priblížime na 2x pôvodnej veľkosti (alebo fixnú čitateľnú hodnotu)
-        const targetScale = 1.2; 
-        wrapper.style.transform = `scale(${targetScale})`;
+        if (!drawing || e.pointerType === 'touch') return;
         
-        // Posunieme scroll tak, aby bod kde je pero bol v strede
-        const rect = container.getBoundingClientRect();
-        container.scrollLeft = (e.clientX - rect.left) * targetScale;
-        container.scrollTop = (e.clientY - rect.top) * targetScale;
-    }
+        const pos = getPos(e);
+        const w = (ctx.globalCompositeOperation === 'destination-out') ? 25 : (pos.pressure * 2.5 + 0.8); // Tenšia čiara pre A4
+        
+        ctx.lineWidth = w;
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        ctx.lineTo(pos.x, pos.y); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(pos.x, pos.y);
+        e.preventDefault();
+    });
 
-    function resetZoom() {
-        wrapper.style.transform = `scale(${initialScale})`;
-        container.scrollLeft = 0;
-        container.scrollTop = 0;
-    }
+    const stopDraw = () => { drawing = false; ctx.beginPath(); };
+    canvas.addEventListener('pointerup', stopDraw);
+    canvas.addEventListener('pointerleave', stopDraw);
 
-    // --- ZVYŠNÉ FUNKCIE ---
     function saveState() {
         if (history.length > 15) history.shift();
         history.push(canvas.toDataURL());
     }
     function undo() {
-        if (history.length <= 1) return;
-        history.pop(); // Odstránime aktuálny
+        if (history.length === 0) return;
         let img = new Image();
         img.onload = () => { ctx.clearRect(0,0,canvas.width,canvas.height); ctx.drawImage(img,0,0); };
-        img.src = history[history.length - 1];
+        img.src = history.pop();
     }
     function setColor(c, id) {
         ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = c;
@@ -204,13 +316,31 @@
     }
     function updateUI(id) {
         document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
-        document.getElementById(id).classList.add('active');
+        if(id) document.getElementById(id).classList.add('active');
     }
-    function clearAll() { if(confirm("Zmazať všetko?")) { ctx.clearRect(0,0,canvas.width,canvas.height); saveState(); } }
-    
+    function clearAll() { if(confirm("Naozaj vymazať všetko?")) { saveState(); ctx.clearRect(0,0,canvas.width,canvas.height); } }
+
+    function movePrint(x, y) {
+        printOffX += x; printOffY += y;
+        document.getElementById('offsetStat').innerText = `${printOffX},${printOffY}`;
+    }
+
     function doPrint() {
-        document.getElementById('pBg').src = guideImg.src;
+        if(!guideImg.src) return alert("Najprv vyber podklad!");
+        
+        const pBg = document.getElementById('pBg');
+        pBg.src = guideImg.src;
+        pBg.style.left = printOffX + "px";
+        pBg.style.top = printOffY + "px";
+        
         document.getElementById('pHand').src = canvas.toDataURL();
+        
+        // Vloženie dátumu do tlače
+        const d = document.getElementById('dateInput').valueAsDate;
+        if(d) {
+            document.getElementById('printDateBox').innerText = d.toLocaleDateString('sk-SK');
+        }
+
         setTimeout(() => window.print(), 500);
     }
 </script>
