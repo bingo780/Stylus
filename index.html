@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>JIS Dekurz v10.0 - Technical & Stable</title>
+    <title>JIS Dekurz v12.0 - AutoSave</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
         :root { --primary: #007AFF; --bg: #333; }
@@ -15,6 +15,14 @@
             background: rgba(0,0,0,0.9); z-index: 9999;
             display: none; align-items: center; justify-content: center;
             color: white; font-size: 20px; font-weight: bold; flex-direction: column;
+        }
+        
+        /* NOTIFIKÁCIA O ULOŽENÍ */
+        #saveStatus {
+            position: fixed; top: 10px; right: 10px; 
+            background: rgba(46, 204, 113, 0.9); color: white; 
+            padding: 5px 10px; border-radius: 5px; font-size: 12px; 
+            z-index: 3000; opacity: 0; transition: opacity 0.5s; pointer-events: none;
         }
 
         ::-webkit-scrollbar { width: 20px; }
@@ -76,38 +84,20 @@
         .action-btn { background: rgba(255,255,255,0.3); border: none; color: white; width: 30px; font-weight: bold; }
         .text-content { background: rgba(255,255,255,0.4); padding: 5px; border: 2px dashed #000; font-family: Arial, sans-serif; font-weight: bold; font-size: 24px; min-width: 40px; outline: none; color: black; }
 
-        /* PRÍPRAVA NA TLAČ (BEZ MAZANIA STRÁNKY) */
-        #printLayer {
-            display: none; /* Normálne skryté */
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: white; z-index: 99999;
-        }
-        #printResultImage {
-            width: 100%; height: 100%; object-fit: contain;
-        }
-
         @media print {
-            @page { size: A4; margin: 0; }
-            body, html { margin: 0; padding: 0; overflow: hidden !important; background: white; }
-            
-            /* Skryť všetko "živé" */
-            .fab-container, .settings-panel, .viewport, #loader { display: none !important; }
-            
-            /* Zobraziť iba printovú vrstvu */
-            #printLayer { display: block !important; }
+            body, html { margin: 0; padding: 0; background: white; width: 100%; height: 100%; overflow: hidden !important; }
+            .fab-container, .settings-panel, .viewport, #loader, #saveStatus { display: none !important; }
+            img.print-result { display: block !important; width: 100%; height: 100%; object-fit: contain; }
         }
     </style>
 </head>
 <body>
 
     <div id="loader">
-        <div>⏳ Spracovávam...</div>
-        <div style="font-size:14px; margin-top:10px; color:#ccc">Pripravujem dokument.</div>
+        <div>⏳ Pracujem...</div>
     </div>
-
-    <div id="printLayer">
-        <img id="printResultImage">
-    </div>
+    
+    <div id="saveStatus">💾 Uložené</div>
 
     <div class="settings-panel">
         <div class="group">
@@ -130,7 +120,7 @@
             <span class="lbl" style="color:#f39c12">Sýtosť</span>
             <div class="row">
                 <div class="btn-mini" onclick="changeOpacity(-1)">-</div>
-                <div id="opacityDisplay" class="val-disp" style="color:#f39c12">15%</div>
+                <div id="opacityDisplay" class="val-disp" style="color:#f39c12">20%</div>
                 <div class="btn-mini" onclick="changeOpacity(1)">+</div>
             </div>
         </div>
@@ -146,7 +136,7 @@
             <span class="lbl" style="color:#007AFF">Hore/Dole</span>
             <div class="row">
                 <div class="btn-mini" onclick="calY(-1)">▲</div>
-                <div id="calYDisp" class="val-disp" style="color:#007AFF">0</div>
+                <div id="calYDisp" class="val-disp" style="color:#007AFF">10</div>
                 <div class="btn-mini" onclick="calY(1)">▼</div>
             </div>
         </div>
@@ -158,13 +148,16 @@
             <div class="sub-fab" onclick="changeZoom(0.1)">➕🔍</div>
             <div class="sub-fab" onclick="changeZoom(-0.1)">➖🔍</div>
             <div style="height:5px"></div>
-            <div class="sub-fab" onclick="document.getElementById('fileIn').click()">📄</div>
+            
+            <div class="sub-fab" onclick="document.getElementById('fileIn').click()" title="Súbor">📄</div>
             <input type="file" id="fileIn" hidden onchange="loadBg(this)">
+            <div class="sub-fab" onclick="loadFromURL()" title="Online" style="background:#e1f5fe">☁️</div>
+            
             <div class="sub-fab" onclick="saveJSON()">💾</div>
             <div class="sub-fab" onclick="document.getElementById('jsonIn').click()">📥</div>
             <input type="file" id="jsonIn" hidden onchange="loadJSON(this)">
             <div class="sub-fab" onclick="undo()">↩️</div>
-            <div class="sub-fab" onclick="clearAll()" style="color:red">🗑️</div>
+            <div class="sub-fab" onclick="clearAll(true)" style="background:#e74c3c; color:white; font-size:12px; font-weight:bold" title="Nový hárok">NOVÝ</div>
         </div>
     </div>
 
@@ -195,28 +188,95 @@
     const ctx = canvas.getContext('2d');
     const loader = document.getElementById('loader');
     
+    // Konfigurácia
+    const DEFAULT_URL = ""; 
+    const AUTO_SAVE_KEY = "jis_dekurz_autosave";
+
     let tool = 'pen';
     let color = 'black';
     let size = 2.5; 
-    let opacity = 15; 
+    let opacity = 20; 
     let currentZoom = 1.0;
     let printOffsetX = 0;
-    let printOffsetY = 10;
+    let printOffsetY = 10; // Auto Offset 10
+    
     let isDrawing = false;
     let history = [];
     let lastPoint = { x: 0, y: 0 };
     
-    // --- 1. SETUP CANVASU (Retina/HighDPI) ---
     function initCanvas() {
-        const dpr = window.devicePixelRatio || 2; 
+        const dpr = window.devicePixelRatio || 1; 
         const rect = paper.getBoundingClientRect();
         canvas.width = rect.width * dpr;
         canvas.height = rect.height * dpr;
         ctx.scale(dpr, dpr);
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
+        
+        document.getElementById('calYDisp').innerText = printOffsetY;
+        
+        // --- OBNOVA ZO ZÁLOHY PO REFRESHI ---
+        setTimeout(restoreAutoSave, 500);
     }
     window.onload = initCanvas;
+
+    // --- AUTO SAVE SYSTEM ---
+    function performAutoSave() {
+        // Uloží všetko do pamäte prehliadača
+        const saveData = {
+            img: canvas.toDataURL(),
+            texts: [],
+            bg: document.getElementById('bgImg').src
+        };
+        
+        document.querySelectorAll('.text-box-wrapper').forEach(el => {
+            saveData.texts.push({
+                l: el.style.left,
+                t: el.style.top,
+                txt: el.querySelector('.text-content').innerText,
+                fs: el.querySelector('.text-content').style.fontSize
+            });
+        });
+
+        try {
+            localStorage.setItem(AUTO_SAVE_KEY, JSON.stringify(saveData));
+            showSaveStatus();
+        } catch (e) {
+            console.log("Pamäť plná, nedá sa uložiť auto-save");
+        }
+    }
+
+    function restoreAutoSave() {
+        const saved = localStorage.getItem(AUTO_SAVE_KEY);
+        if (saved) {
+            try {
+                const data = JSON.parse(saved);
+                
+                // 1. Pozadie
+                if (data.bg && data.bg.length > 100) {
+                    document.getElementById('bgImg').src = data.bg;
+                }
+                
+                // 2. Kresba
+                const img = new Image();
+                img.onload = () => {
+                    ctx.clearRect(0,0,paper.offsetWidth, paper.offsetHeight);
+                    ctx.drawImage(img, 0, 0, paper.offsetWidth, paper.offsetHeight);
+                };
+                img.src = data.img;
+                
+                // 3. Texty
+                data.texts.forEach(t => addTextObj(t.txt, parseInt(t.fs), t.l, t.t));
+                
+            } catch (e) { console.error("Chyba obnovy", e); }
+        }
+    }
+
+    function showSaveStatus() {
+        const el = document.getElementById('saveStatus');
+        el.style.opacity = 1;
+        setTimeout(() => el.style.opacity = 0, 1000);
+    }
 
     // --- UI FUNKCIE ---
     function calX(d) { printOffsetX += d; document.getElementById('calXDisp').innerText = printOffsetX; }
@@ -264,8 +324,6 @@
         toggleMenu('toolMenu');
     }
 
-    // --- KRESLENIE (TECHNICKÉ PERO - 1:1 z v4.7) ---
-    // Žiadna dynamika, žiadne menenie hrúbky podľa rýchlosti
     function getCanvasPos(e) {
         const rect = paper.getBoundingClientRect();
         const scaleX = paper.offsetWidth / rect.width;
@@ -281,7 +339,6 @@
             ctx.beginPath();
             ctx.moveTo(lastPoint.x, lastPoint.y);
             
-            // Konštantné nastavenie (vždy rovnaké)
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             
@@ -292,7 +349,7 @@
             } else if (tool === 'eraser') {
                 ctx.lineWidth = size * 6;
             } else {
-                ctx.lineWidth = size; // TECHNICKÉ PERO - stále rovnaká hrúbka
+                ctx.lineWidth = size;
                 ctx.strokeStyle = color;
             }
         }
@@ -304,52 +361,66 @@
         
         const currentPoint = getCanvasPos(e);
         const midPoint = { x: (lastPoint.x + currentPoint.x) / 2, y: (lastPoint.y + currentPoint.y) / 2 };
-
-        // Žiadna zmena ctx.lineWidth = konštantná čiara
         ctx.quadraticCurveTo(lastPoint.x, lastPoint.y, midPoint.x, midPoint.y);
         ctx.stroke();
         
-        ctx.beginPath(); ctx.moveTo(midPoint.x, midPoint.y);
+        ctx.beginPath(); 
+        ctx.moveTo(midPoint.x, midPoint.y);
         lastPoint = currentPoint;
     });
 
     window.addEventListener('pointerup', () => { 
-        if(isDrawing) { ctx.lineTo(lastPoint.x, lastPoint.y); ctx.stroke(); isDrawing = false; ctx.closePath(); } 
+        if(isDrawing) { 
+            ctx.lineTo(lastPoint.x, lastPoint.y); 
+            ctx.stroke(); 
+            isDrawing = false; 
+            ctx.closePath(); 
+            performAutoSave(); // Uložiť po dokončení ťahu
+        } 
     });
 
-    // --- TEXTOVÉ OBJEKTY ---
-    function addTextObj(t, s) {
+    function addTextObj(t, s, left, top) {
         const d = document.createElement('div');
-        d.className = 'text-box-wrapper'; d.style.left = '100px'; d.style.top = '100px';
-        d.innerHTML = `<div class="control-bar"><button class="action-btn" onclick="rs(this,-2)">A-</button><div class="drag-handle">::::</div><button class="action-btn" onclick="rs(this,2)">A+</button><button class="action-btn" style="color:#ff9999" onclick="this.closest('.text-box-wrapper').remove()">❌</button></div><div class="text-content" contenteditable="true" style="font-size:${s}px">${t}</div>`;
+        d.className = 'text-box-wrapper'; 
+        d.style.left = left || '100px'; 
+        d.style.top = top || '100px';
+        d.innerHTML = `<div class="control-bar"><button class="action-btn" onclick="rs(this,-2)">A-</button><div class="drag-handle">::::</div><button class="action-btn" onclick="rs(this,2)">A+</button><button class="action-btn" style="color:#ff9999" onclick="this.closest('.text-box-wrapper').remove(); performAutoSave();">❌</button></div><div class="text-content" contenteditable="true" style="font-size:${s}px" oninput="performAutoSave()">${t}</div>`;
         paper.appendChild(d); setupDrag(d);
+        performAutoSave();
     }
-    window.rs = (b,d) => { const e=b.closest('.text-box-wrapper').querySelector('.text-content'); let s=parseInt(e.style.fontSize)||24; e.style.fontSize=(s+d)+'px'; };
+    window.rs = (b,d) => { const e=b.closest('.text-box-wrapper').querySelector('.text-content'); let s=parseInt(e.style.fontSize)||24; e.style.fontSize=(s+d)+'px'; performAutoSave(); };
     
     function setupDrag(el) {
         const handle = el.querySelector('.control-bar'); let isDrag=false, sx, sy, sl, st;
         handle.onpointerdown = (e) => { isDrag=true; handle.setPointerCapture(e.pointerId); sx=e.clientX; sy=e.clientY; sl=el.offsetLeft; st=el.offsetTop; e.preventDefault(); e.stopPropagation(); };
         handle.onpointermove = (e) => { if(!isDrag) return; const dx=(e.clientX-sx)/currentZoom; const dy=(e.clientY-sy)/currentZoom; el.style.left=(sl+dx)+'px'; el.style.top=(st+dy)+'px'; };
-        handle.onpointerup = () => isDrag=false;
+        handle.onpointerup = () => { isDrag=false; performAutoSave(); };
     }
 
-    // --- EXPORT FUNKCIA (ZLÚČENIE + KALIBRÁCIA) ---
+    function loadFromURL() {
+        let url = prompt("Zadajte URL obrázka (GitHub Raw):", DEFAULT_URL);
+        if(url) {
+            const img = document.getElementById('bgImg');
+            img.crossOrigin = "Anonymous";
+            img.src = url;
+            img.onerror = () => alert("Chyba načítania.");
+            img.onload = () => performAutoSave();
+        }
+    }
+
     function createFinalImage() {
         const outputCanvas = document.createElement('canvas');
         outputCanvas.width = 2480; 
         outputCanvas.height = 3508;
         const oCtx = outputCanvas.getContext('2d');
 
-        // 1. Pozadie
         const bgImg = document.getElementById('bgImg');
         if (bgImg.src) {
             oCtx.drawImage(bgImg, 0, 0, outputCanvas.width, outputCanvas.height);
         }
 
-        // 2. Pero
         oCtx.drawImage(canvas, 0, 0, outputCanvas.width, outputCanvas.height);
 
-        // 3. Texty + Kalibrácia
         oCtx.textBaseline = 'top'; 
         oCtx.fillStyle = 'black';
         
@@ -376,7 +447,6 @@
         return outputCanvas.toDataURL('image/jpeg', 0.95);
     }
 
-    // --- SPUSTENIE EXPORTU ---
     async function runExport(type) {
         if(!confirm(type === 'pdf' ? "Uložiť PDF?" : "Spustiť tlač?")) return;
         loader.style.display = 'flex';
@@ -385,22 +455,14 @@
             const finalData = createFinalImage();
 
             if (type === 'print') {
-                // TLAČ - BEZ MAZANIA STRÁNKY
-                // Len naplníme skrytý obrázok a vytlačíme ho
-                const printImg = document.getElementById('printResultImage');
+                const printImg = document.createElement('img');
                 printImg.src = finalData;
-                
-                // CSS @media print sa postará o to, že bude vidno LEN tento obrázok
+                printImg.className = 'print-result';
+                document.body.innerHTML = '';
+                document.body.appendChild(printImg);
                 window.print();
-                
-                // Vyčistíme pamäť po chvíľke, ale stránku nerefreshujeme
-                setTimeout(() => { 
-                    printImg.src = "";
-                    loader.style.display = 'none'; 
-                }, 2000);
-
+                setTimeout(() => { location.reload(); }, 500);
             } else {
-                // PDF EXPORT
                 try {
                     const { jsPDF } = window.jspdf;
                     const pdf = new jsPDF('p', 'mm', 'a4');
@@ -416,10 +478,24 @@
     }
 
     function saveJSON(){const l=[];document.querySelectorAll('.text-box-wrapper').forEach(e=>{l.push({l:e.style.left,t:e.style.top,txt:e.querySelector('.text-content').innerText,fs:e.querySelector('.text-content').style.fontSize});});const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify({img:canvas.toDataURL(),texts:l})],{type:'application/json'}));a.download='dekurz.json';a.click();}
-    function loadJSON(i){const r=new FileReader();r.onload=(e)=>{const d=JSON.parse(e.target.result);const m=new Image();m.onload=()=>{ctx.clearRect(0,0,paper.offsetWidth,paper.offsetHeight);ctx.drawImage(m,0,0,paper.offsetWidth,paper.offsetHeight);};m.src=d.img;document.querySelectorAll('.text-box-wrapper').forEach(x=>x.remove());d.texts.forEach(t=>addTextObj(t.txt,parseInt(t.fs)));};r.readAsText(i.files[0]);}
-    function loadBg(i){const r=new FileReader();r.onload=(e)=>document.getElementById('bgImg').src=e.target.result;r.readAsDataURL(i.files[0]);}
-    function clearAll(){if(confirm("Zmazať všetko?")){ctx.clearRect(0,0,paper.offsetWidth,paper.offsetHeight);document.querySelectorAll('.text-box-wrapper').forEach(e=>e.remove());}}
-    function undo() { if(history.length>0){const i=new Image();i.onload=()=>{ctx.clearRect(0,0,paper.offsetWidth,paper.offsetHeight);ctx.drawImage(i,0,0,paper.offsetWidth,paper.offsetHeight);};i.src=history.pop();} }
+    function loadJSON(i){const r=new FileReader();r.onload=(e)=>{const d=JSON.parse(e.target.result);const m=new Image();m.onload=()=>{ctx.clearRect(0,0,paper.offsetWidth,paper.offsetHeight);ctx.drawImage(m,0,0,paper.offsetWidth,paper.offsetHeight); performAutoSave();};m.src=d.img;document.querySelectorAll('.text-box-wrapper').forEach(x=>x.remove());d.texts.forEach(t=>addTextObj(t.txt,parseInt(t.fs), t.l, t.t));};r.readAsText(i.files[0]);}
+    function loadBg(i){const r=new FileReader();r.onload=(e)=>{document.getElementById('bgImg').src=e.target.result; performAutoSave();};r.readAsDataURL(i.files[0]);}
+    
+    // UPRAVENÉ MAZANIE PRE NOVÝ LIST
+    function clearAll(fullReset = false){
+        if(confirm(fullReset ? "NOVÝ PACIENT? Vymaže sa všetko." : "Zmazať len kresbu?")){
+            ctx.clearRect(0,0,paper.offsetWidth,paper.offsetHeight);
+            if(fullReset) {
+                document.querySelectorAll('.text-box-wrapper').forEach(e=>e.remove());
+                document.getElementById('bgImg').src = ""; // Voliteľné, ak chceš zmazať aj podklad
+                localStorage.removeItem(AUTO_SAVE_KEY); // Zmazať pamäť
+            } else {
+                performAutoSave();
+            }
+        }
+    }
+    
+    function undo() { if(history.length>0){const i=new Image();i.onload=()=>{ctx.clearRect(0,0,paper.offsetWidth,paper.offsetHeight);ctx.drawImage(i,0,0,paper.offsetWidth,paper.offsetHeight); performAutoSave();};i.src=history.pop();} }
     function saveState() { if(history.length>5)history.shift(); history.push(canvas.toDataURL()); }
 
 </script>
