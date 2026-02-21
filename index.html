@@ -99,15 +99,24 @@
     
     <div id="saveStatus">💾 Uložené</div>
 
-    <div class="settings-panel">
-        <div class="group">
-            <span class="lbl">Farba</span>
-            <div class="row">
-                <div class="color-dot" style="background:black" onclick="setColor('black', this)"></div>
-                <div class="color-dot" style="background:blue" onclick="setColor('blue', this)"></div>
-                <div class="color-dot" style="background:red" onclick="setColor('red', this)"></div>
-            </div>
-        </div>
+<div class="group">
+    <span class="lbl">Farba</span>
+    <div class="row">
+        <div class="color-dot active" style="background:black" onclick="setColor('black', this)"></div>
+        <div class="color-dot" style="background:blue" onclick="setColor('blue', this)"></div>
+        <div class="color-dot" style="background:red" onclick="setColor('red', this)"></div>
+
+        <!-- ZELENÉ -->
+        <div class="color-dot" style="background:green" onclick="setColor('green', this)"></div>
+        <div class="color-dot" style="background:#00aa00" onclick="setColor('#00aa00', this)"></div>
+        <div class="color-dot" style="background:#00ff00" onclick="setColor('#00ff00', this)"></div>
+
+        <!-- Ďalšie užitočné -->
+        <div class="color-dot" style="background:purple" onclick="setColor('purple', this)"></div>
+        <div class="color-dot" style="background:orange" onclick="setColor('orange', this)"></div>
+        <div class="color-dot" style="background:brown" onclick="setColor('brown', this)"></div>
+    </div>
+</div>
         <div class="group">
             <span class="lbl">Hrúbka</span>
             <div class="row">
